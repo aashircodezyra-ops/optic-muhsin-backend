@@ -67,8 +67,14 @@ app.use(cors({
       'http://localhost:5173',  // Vite default port
       'http://127.0.0.1:3000',
       'http://127.0.0.1:5173',
-      // Vercel deployment URLs (will be set via FRONTEND_URL env var)
+      // Vercel deployment URLs
+      'https://*.vercel.app',  // Allow all Vercel deployments
     ];
+    
+    // Check if origin matches Vercel pattern
+    if (origin && origin.includes('.vercel.app')) {
+      return callback(null, true);
+    }
 
     if (allowedOrigins.includes(origin)) {
       return callback(null, true);
