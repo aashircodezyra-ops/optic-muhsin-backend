@@ -66,7 +66,8 @@ app.use(cors({
       'http://localhost:3000',  // Next.js default port
       'http://localhost:5173',  // Vite default port
       'http://127.0.0.1:3000',
-      'http://127.0.0.1:5173'
+      'http://127.0.0.1:5173',
+      // Vercel deployment URLs (will be set via FRONTEND_URL env var)
     ];
 
     if (allowedOrigins.includes(origin)) {
