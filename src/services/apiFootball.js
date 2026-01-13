@@ -9,11 +9,12 @@ const FOOTBALL_BASE_URL = 'https://v3.football.api-sports.io';
 const BASKETBALL_BASE_URL = 'https://v1.basketball.api-sports.io';
 
 // Create axios instances with proper headers
-// API-Sports.io uses x-apisports-key header (NOT RapidAPI format)
+// API-Sports.io uses x-apisports-key header (lowercase, with hyphen)
 const footballClient = axios.create({
   baseURL: FOOTBALL_BASE_URL,
   headers: {
     'x-apisports-key': API_KEY,
+    'Accept': 'application/json',
   },
   timeout: 30000,
 });
@@ -22,6 +23,7 @@ const basketballClient = axios.create({
   baseURL: BASKETBALL_BASE_URL,
   headers: {
     'x-apisports-key': API_KEY,
+    'Accept': 'application/json',
   },
   timeout: 30000,
 });
