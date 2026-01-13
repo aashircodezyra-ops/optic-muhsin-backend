@@ -1,36 +1,19 @@
 const axios = require('axios');
 
-const API_KEY = process.env.API_FOOTBALL_KEY;
+// TheSportsDB API - Free tier uses key '123'
+// Documentation: https://www.thesportsdb.com/documentation#base_url
+const SPORTS_DB_BASE_URL = 'https://www.thesportsdb.com/api/v1/json';
+const API_KEY = process.env.THE_SPORTS_DB_KEY || '123'; // Free key is '123'
 
-// Football API (v3)
-const FOOTBALL_BASE_URL = 'https://v3.football.api-sports.io';
-
-// Basketball API (v1)
-const BASKETBALL_BASE_URL = 'https://v1.basketball.api-sports.io';
-
-// Create axios instances with proper headers
-// API-Sports.io uses x-apisports-key header (lowercase, with hyphen)
-const footballClient = axios.create({
-  baseURL: FOOTBALL_BASE_URL,
-  headers: {
-    'x-apisports-key': API_KEY,
-    'Accept': 'application/json',
-  },
-  timeout: 30000,
-});
-
-const basketballClient = axios.create({
-  baseURL: BASKETBALL_BASE_URL,
-  headers: {
-    'x-apisports-key': API_KEY,
-    'Accept': 'application/json',
-  },
+// Create axios instance
+const sportsDBClient = axios.create({
+  baseURL: SPORTS_DB_BASE_URL,
   timeout: 30000,
 });
 
 // Error handler
 const handleError = (error, context) => {
-  console.error(`API-Football ${context} error:`, error.message);
+  console.error(`TheSportsDB ${context} error:`, error.message);
   if (error.response) {
     console.error('Response status:', error.response.status);
     console.error('Response data:', error.response.data);
@@ -43,20 +26,61 @@ const handleError = (error, context) => {
 };
 
 // ============================================
-// FOOTBALL API FUNCTIONS
+// FOOTBALL API FUNCTIONS (Using TheSportsDB)
 // ============================================
 
-// Get live football matches
+// Get live football matches (Note: Free tier doesn't have live scores, using recent events)
 const getFootballLiveMatches = async () => {
   try {
-    if (!API_KEY) {
-      throw new Error('API-Football key not configured');
-    }
+    // Free tier doesn't have live scores, so we'll get today's events
+    const today = new Date().toISOString().split('T')[0];
+    const endpoint = `/${API_KEY}/eventsday.php?d=${today}&s=Soccer`;
+    
+    const response = await sportsDBClient.get(endpoint);
+    const events = response.data.events || [];
+    
+    // Filter for events that might be live (checking time)
+    const now = new Date();
+    const liveEvents = events.filter(event => {
+      if (!event.dateEvent || !event.strTime) return false;
+      const eventDate = new Date(`${event.dateEvent}T${event.strTime}`);
+      const eventEnd = new Date(eventDate.getTime() + 2 * 60 * 60 * 1000); // 2 hours after start
+      return now >= eventDate && now <= eventEnd;
+    });
 
-    const response = await footballClient.get('/fixtures?live=all');
+    // Transform to match expected format
+    const transformed = liveEvents.map(event => ({
+      fixture: {
+        id: event.idEvent,
+        date: `${event.dateEvent}T${event.strTime}`,
+        status: {
+          short: 'LIVE',
+          elapsed: Math.floor((now - new Date(`${event.dateEvent}T${event.strTime}`)) / 60000),
+        },
+      },
+      league: {
+        id: event.idLeague,
+        name: event.strLeague || 'Unknown League',
+      },
+      teams: {
+        home: {
+          id: event.idHomeTeam,
+          name: event.strHomeTeam || 'TBD',
+        },
+        away: {
+          id: event.idAwayTeam,
+          name: event.strAwayTeam || 'TBD',
+        },
+      },
+      goals: {
+        home: parseInt(event.intHomeScore) || 0,
+        away: parseInt(event.intAwayScore) || 0,
+      },
+    }));
+
     return {
       success: true,
-      data: response.data.response || [],
+      data: transformed,
     };
   } catch (error) {
     return handleError(error, 'getFootballLiveMatches');
@@ -66,56 +90,118 @@ const getFootballLiveMatches = async () => {
 // Get football fixtures (upcoming or by date)
 const getFootballFixtures = async (date = null, leagueId = null) => {
   try {
-    if (!API_KEY) {
-      throw new Error('API-Football key not configured');
-    }
-
-    let endpoint = '/fixtures';
-    const params = new URLSearchParams();
-    
-    if (date) {
-      params.append('date', date);
-    } else {
-      // Get today's date if not specified
-      const today = new Date().toISOString().split('T')[0];
-      params.append('date', today);
-    }
+    const requestedDate = date || new Date().toISOString().split('T')[0];
+    let endpoint = '';
     
     if (leagueId) {
-      params.append('league', leagueId);
+      // Get events for a specific league
+      endpoint = `/${API_KEY}/eventsseason.php?id=${leagueId}&s=${new Date().getFullYear()}-${new Date().getFullYear() + 1}`;
+    } else {
+      // Get events for a specific date
+      endpoint = `/${API_KEY}/eventsday.php?d=${requestedDate}&s=Soccer`;
     }
 
-    const response = await footballClient.get(`${endpoint}?${params.toString()}`);
+    const response = await sportsDBClient.get(endpoint);
+    const events = response.data.events || [];
+
+    // Filter for upcoming events
+    const now = new Date();
+    const upcomingEvents = events.filter(event => {
+      if (!event.dateEvent || !event.strTime) return false;
+      const eventDate = new Date(`${event.dateEvent}T${event.strTime}`);
+      return eventDate > now;
+    });
+
+    // Transform to match expected format
+    const transformed = upcomingEvents.map(event => ({
+      fixture: {
+        id: event.idEvent,
+        date: `${event.dateEvent}T${event.strTime}`,
+        status: {
+          short: 'NS',
+        },
+      },
+      league: {
+        id: event.idLeague,
+        name: event.strLeague || 'Unknown League',
+      },
+      teams: {
+        home: {
+          id: event.idHomeTeam,
+          name: event.strHomeTeam || 'TBD',
+        },
+        away: {
+          id: event.idAwayTeam,
+          name: event.strAwayTeam || 'TBD',
+        },
+      },
+      goals: {
+        home: 0,
+        away: 0,
+      },
+    }));
+
     return {
       success: true,
-      data: response.data.response || [],
+      data: transformed,
     };
   } catch (error) {
     return handleError(error, 'getFootballFixtures');
   }
 };
 
-// Get football match details with events, statistics, lineups
+// Get football match details
 const getFootballMatchDetails = async (fixtureId) => {
   try {
-    if (!API_KEY) {
-      throw new Error('API-Football key not configured');
+    const endpoint = `/${API_KEY}/lookupevent.php?id=${fixtureId}`;
+    const response = await sportsDBClient.get(endpoint);
+    const event = response.data.events?.[0];
+
+    if (!event) {
+      return {
+        success: false,
+        data: null,
+        message: 'Event not found',
+      };
     }
 
-    const [fixtureResponse, eventsResponse, statsResponse, lineupsResponse] = await Promise.all([
-      footballClient.get(`/fixtures?id=${fixtureId}`),
-      footballClient.get(`/fixtures/events?fixture=${fixtureId}`),
-      footballClient.get(`/fixtures/statistics?fixture=${fixtureId}`),
-      footballClient.get(`/fixtures/lineups?fixture=${fixtureId}`),
+    // Get additional data
+    const [lineupResponse, statsResponse] = await Promise.all([
+      sportsDBClient.get(`/${API_KEY}/lookuplineup.php?id=${fixtureId}`).catch(() => ({ data: { lineups: [] } })),
+      sportsDBClient.get(`/${API_KEY}/lookupeventstats.php?id=${fixtureId}`).catch(() => ({ data: { eventstats: [] } })),
     ]);
 
     return {
       success: true,
       data: {
-        fixture: fixtureResponse.data.response?.[0] || null,
-        events: eventsResponse.data.response || [],
-        statistics: statsResponse.data.response || [],
-        lineups: lineupsResponse.data.response || [],
+        fixture: {
+          id: event.idEvent,
+          date: `${event.dateEvent}T${event.strTime}`,
+          status: {
+            short: event.strStatus || 'NS',
+          },
+        },
+        league: {
+          id: event.idLeague,
+          name: event.strLeague || 'Unknown League',
+        },
+        teams: {
+          home: {
+            id: event.idHomeTeam,
+            name: event.strHomeTeam || 'TBD',
+          },
+          away: {
+            id: event.idAwayTeam,
+            name: event.strAwayTeam || 'TBD',
+          },
+        },
+        goals: {
+          home: parseInt(event.intHomeScore) || 0,
+          away: parseInt(event.intAwayScore) || 0,
+        },
+        events: [],
+        statistics: statsResponse.data.eventstats || [],
+        lineups: lineupResponse.data.lineups || [],
       },
     };
   } catch (error) {
@@ -126,14 +212,25 @@ const getFootballMatchDetails = async (fixtureId) => {
 // Get football leagues
 const getFootballLeagues = async () => {
   try {
-    if (!API_KEY) {
-      throw new Error('API-Football key not configured');
-    }
+    const endpoint = `/${API_KEY}/search_all_leagues.php?s=Soccer`;
+    const response = await sportsDBClient.get(endpoint);
+    const leagues = response.data.leagues || [];
 
-    const response = await footballClient.get('/leagues?current=true');
+    const transformed = leagues.map(league => ({
+      league: {
+        id: league.idLeague,
+        name: league.strLeague || 'Unknown League',
+        country: league.strCountry || '',
+        logo: league.strLogo || '',
+      },
+      country: {
+        name: league.strCountry || '',
+      },
+    }));
+
     return {
       success: true,
-      data: response.data.response || [],
+      data: transformed,
     };
   } catch (error) {
     return handleError(error, 'getFootballLeagues');
@@ -143,29 +240,31 @@ const getFootballLeagues = async () => {
 // Get football teams
 const getFootballTeams = async (leagueId = null, season = null) => {
   try {
-    if (!API_KEY) {
-      throw new Error('API-Football key not configured');
-    }
-
-    let endpoint = '/teams';
-    const params = new URLSearchParams();
+    let endpoint = '';
     
     if (leagueId) {
-      params.append('league', leagueId);
-    }
-    
-    if (season) {
-      params.append('season', season);
+      endpoint = `/${API_KEY}/lookup_all_teams.php?id=${leagueId}`;
     } else {
-      // Use current season
-      const currentYear = new Date().getFullYear();
-      params.append('season', currentYear);
+      // Get popular teams
+      endpoint = `/${API_KEY}/searchteams.php?t=Arsenal`; // Default search
     }
 
-    const response = await footballClient.get(`${endpoint}?${params.toString()}`);
+    const response = await sportsDBClient.get(endpoint);
+    const teams = response.data.teams || [];
+
+    const transformed = teams
+      .filter(team => team.strSport?.toLowerCase() === 'soccer')
+      .map(team => ({
+        team: {
+          id: team.idTeam,
+          name: team.strTeam || 'Unknown Team',
+          logo: team.strTeamBadge || '',
+        },
+      }));
+
     return {
       success: true,
-      data: response.data.response || [],
+      data: transformed,
     };
   } catch (error) {
     return handleError(error, 'getFootballTeams');
@@ -175,80 +274,238 @@ const getFootballTeams = async (leagueId = null, season = null) => {
 // Get football standings
 const getFootballStandings = async (leagueId, season = null) => {
   try {
-    if (!API_KEY) {
-      throw new Error('API-Football key not configured');
-    }
-
     if (!leagueId) {
       throw new Error('League ID is required');
     }
 
-    const params = new URLSearchParams();
-    params.append('league', leagueId);
-    
-    if (season) {
-      params.append('season', season);
-    } else {
-      const currentYear = new Date().getFullYear();
-      params.append('season', currentYear);
-    }
+    const endpoint = `/${API_KEY}/lookuptable.php?l=${leagueId}`;
+    const response = await sportsDBClient.get(endpoint);
+    const table = response.data.table || [];
 
-    const response = await footballClient.get(`/standings?${params.toString()}`);
     return {
       success: true,
-      data: response.data.response || [],
+      data: [{
+        league: {
+          id: leagueId,
+        },
+        standings: [table.map((team, index) => ({
+          rank: index + 1,
+          team: {
+            id: team.idTeam,
+            name: team.strTeam || 'Unknown Team',
+          },
+          points: parseInt(team.intPoints) || 0,
+          goalsDiff: parseInt(team.intGoalsDifference) || 0,
+        }))],
+      }],
     };
   } catch (error) {
     return handleError(error, 'getFootballStandings');
   }
 };
 
+// Get football players
+const getFootballPlayers = async (teamId = null, leagueId = null, season = null, search = null) => {
+  try {
+    if (teamId) {
+      const endpoint = `/${API_KEY}/lookup_all_players.php?id=${teamId}`;
+      const response = await sportsDBClient.get(endpoint);
+      const players = response.data.player || [];
+
+      return {
+        success: true,
+        data: players.map(player => ({
+          player: {
+            id: player.idPlayer,
+            name: player.strPlayer || 'Unknown Player',
+            position: player.strPosition || '',
+            nationality: player.strNationality || '',
+            thumb: player.strThumb || '',
+          },
+        })),
+      };
+    }
+
+    if (search) {
+      const endpoint = `/${API_KEY}/searchplayers.php?p=${encodeURIComponent(search)}`;
+      const response = await sportsDBClient.get(endpoint);
+      const players = response.data.player || [];
+
+      return {
+        success: true,
+        data: players.map(player => ({
+          player: {
+            id: player.idPlayer,
+            name: player.strPlayer || 'Unknown Player',
+            position: player.strPosition || '',
+            nationality: player.strNationality || '',
+            thumb: player.strThumb || '',
+          },
+        })),
+      };
+    }
+
+    return {
+      success: true,
+      data: [],
+    };
+  } catch (error) {
+    return handleError(error, 'getFootballPlayers');
+  }
+};
+
+// Get football player statistics
+const getFootballPlayerStats = async (playerId, season = null, leagueId = null) => {
+  try {
+    if (!playerId) {
+      throw new Error('Player ID is required');
+    }
+
+    const endpoint = `/${API_KEY}/lookupplayer.php?id=${playerId}`;
+    const response = await sportsDBClient.get(endpoint);
+    const player = response.data.players?.[0];
+
+    if (!player) {
+      return {
+        success: false,
+        data: null,
+        message: 'Player not found',
+      };
+    }
+
+    return {
+      success: true,
+      data: [{
+        player: {
+          id: player.idPlayer,
+          name: player.strPlayer || 'Unknown Player',
+          position: player.strPosition || '',
+          nationality: player.strNationality || '',
+          thumb: player.strThumb || '',
+        },
+        statistics: [],
+      }],
+    };
+  } catch (error) {
+    return handleError(error, 'getFootballPlayerStats');
+  }
+};
+
 // ============================================
-// BASKETBALL API FUNCTIONS
+// BASKETBALL API FUNCTIONS (Using TheSportsDB)
 // ============================================
 
 // Get live basketball matches
 const getBasketballLiveMatches = async () => {
   try {
-    if (!API_KEY) {
-      throw new Error('API-Football key not configured');
-    }
+    const today = new Date().toISOString().split('T')[0];
+    const endpoint = `/${API_KEY}/eventsday.php?d=${today}&s=Basketball`;
+    
+    const response = await sportsDBClient.get(endpoint);
+    const events = response.data.events || [];
+    
+    const now = new Date();
+    const liveEvents = events.filter(event => {
+      if (!event.dateEvent || !event.strTime) return false;
+      const eventDate = new Date(`${event.dateEvent}T${event.strTime}`);
+      const eventEnd = new Date(eventDate.getTime() + 2 * 60 * 60 * 1000);
+      return now >= eventDate && now <= eventEnd;
+    });
 
-    const response = await basketballClient.get('/games?live=all');
+    const transformed = liveEvents.map(event => ({
+      id: event.idEvent,
+      date: `${event.dateEvent}T${event.strTime}`,
+      status: {
+        short: 'LIVE',
+      },
+      league: {
+        id: event.idLeague,
+        name: event.strLeague || 'Unknown League',
+      },
+      teams: {
+        home: {
+          id: event.idHomeTeam,
+          name: event.strHomeTeam || 'TBD',
+        },
+        away: {
+          id: event.idAwayTeam,
+          name: event.strAwayTeam || 'TBD',
+        },
+      },
+      scores: {
+        home: {
+          total: parseInt(event.intHomeScore) || 0,
+        },
+        away: {
+          total: parseInt(event.intAwayScore) || 0,
+        },
+      },
+    }));
+
     return {
       success: true,
-      data: response.data.response || [],
+      data: transformed,
     };
   } catch (error) {
     return handleError(error, 'getBasketballLiveMatches');
   }
 };
 
-// Get basketball fixtures (upcoming or by date)
+// Get basketball fixtures
 const getBasketballFixtures = async (date = null, leagueId = null) => {
   try {
-    if (!API_KEY) {
-      throw new Error('API-Football key not configured');
-    }
-
-    let endpoint = '/games';
-    const params = new URLSearchParams();
-    
-    if (date) {
-      params.append('date', date);
-    } else {
-      const today = new Date().toISOString().split('T')[0];
-      params.append('date', today);
-    }
+    const requestedDate = date || new Date().toISOString().split('T')[0];
+    let endpoint = '';
     
     if (leagueId) {
-      params.append('league', leagueId);
+      endpoint = `/${API_KEY}/eventsseason.php?id=${leagueId}&s=${new Date().getFullYear()}-${new Date().getFullYear() + 1}`;
+    } else {
+      endpoint = `/${API_KEY}/eventsday.php?d=${requestedDate}&s=Basketball`;
     }
 
-    const response = await basketballClient.get(`${endpoint}?${params.toString()}`);
+    const response = await sportsDBClient.get(endpoint);
+    const events = response.data.events || [];
+
+    const now = new Date();
+    const upcomingEvents = events.filter(event => {
+      if (!event.dateEvent || !event.strTime) return false;
+      const eventDate = new Date(`${event.dateEvent}T${event.strTime}`);
+      return eventDate > now;
+    });
+
+    const transformed = upcomingEvents.map(event => ({
+      id: event.idEvent,
+      date: `${event.dateEvent}T${event.strTime}`,
+      status: {
+        short: 'NS',
+      },
+      league: {
+        id: event.idLeague,
+        name: event.strLeague || 'Unknown League',
+      },
+      teams: {
+        home: {
+          id: event.idHomeTeam,
+          name: event.strHomeTeam || 'TBD',
+        },
+        away: {
+          id: event.idAwayTeam,
+          name: event.strAwayTeam || 'TBD',
+        },
+      },
+      scores: {
+        home: {
+          total: 0,
+        },
+        away: {
+          total: 0,
+        },
+      },
+    }));
+
     return {
       success: true,
-      data: response.data.response || [],
+      data: transformed,
     };
   } catch (error) {
     return handleError(error, 'getBasketballFixtures');
@@ -258,22 +515,52 @@ const getBasketballFixtures = async (date = null, leagueId = null) => {
 // Get basketball match details
 const getBasketballMatchDetails = async (gameId) => {
   try {
-    if (!API_KEY) {
-      throw new Error('API-Football key not configured');
-    }
+    const endpoint = `/${API_KEY}/lookupevent.php?id=${gameId}`;
+    const response = await sportsDBClient.get(endpoint);
+    const event = response.data.events?.[0];
 
-    const [gameResponse, eventsResponse, statsResponse] = await Promise.all([
-      basketballClient.get(`/games?id=${gameId}`),
-      basketballClient.get(`/games/events?game=${gameId}`),
-      basketballClient.get(`/games/statistics?game=${gameId}`),
-    ]);
+    if (!event) {
+      return {
+        success: false,
+        data: null,
+        message: 'Event not found',
+      };
+    }
 
     return {
       success: true,
       data: {
-        game: gameResponse.data.response?.[0] || null,
-        events: eventsResponse.data.response || [],
-        statistics: statsResponse.data.response || [],
+        game: {
+          id: event.idEvent,
+          date: `${event.dateEvent}T${event.strTime}`,
+          status: {
+            short: event.strStatus || 'NS',
+          },
+        },
+        league: {
+          id: event.idLeague,
+          name: event.strLeague || 'Unknown League',
+        },
+        teams: {
+          home: {
+            id: event.idHomeTeam,
+            name: event.strHomeTeam || 'TBD',
+          },
+          away: {
+            id: event.idAwayTeam,
+            name: event.strAwayTeam || 'TBD',
+          },
+        },
+        scores: {
+          home: {
+            total: parseInt(event.intHomeScore) || 0,
+          },
+          away: {
+            total: parseInt(event.intAwayScore) || 0,
+          },
+        },
+        events: [],
+        statistics: [],
       },
     };
   } catch (error) {
@@ -284,14 +571,25 @@ const getBasketballMatchDetails = async (gameId) => {
 // Get basketball leagues
 const getBasketballLeagues = async () => {
   try {
-    if (!API_KEY) {
-      throw new Error('API-Football key not configured');
-    }
+    const endpoint = `/${API_KEY}/search_all_leagues.php?s=Basketball`;
+    const response = await sportsDBClient.get(endpoint);
+    const leagues = response.data.leagues || [];
 
-    const response = await basketballClient.get('/leagues?current=true');
+    const transformed = leagues.map(league => ({
+      league: {
+        id: league.idLeague,
+        name: league.strLeague || 'Unknown League',
+        country: league.strCountry || '',
+        logo: league.strLogo || '',
+      },
+      country: {
+        name: league.strCountry || '',
+      },
+    }));
+
     return {
       success: true,
-      data: response.data.response || [],
+      data: transformed,
     };
   } catch (error) {
     return handleError(error, 'getBasketballLeagues');
@@ -301,28 +599,30 @@ const getBasketballLeagues = async () => {
 // Get basketball teams
 const getBasketballTeams = async (leagueId = null, season = null) => {
   try {
-    if (!API_KEY) {
-      throw new Error('API-Football key not configured');
-    }
-
-    let endpoint = '/teams';
-    const params = new URLSearchParams();
+    let endpoint = '';
     
     if (leagueId) {
-      params.append('league', leagueId);
-    }
-    
-    if (season) {
-      params.append('season', season);
+      endpoint = `/${API_KEY}/lookup_all_teams.php?id=${leagueId}`;
     } else {
-      const currentYear = new Date().getFullYear();
-      params.append('season', currentYear);
+      endpoint = `/${API_KEY}/searchteams.php?t=Lakers`;
     }
 
-    const response = await basketballClient.get(`${endpoint}?${params.toString()}`);
+    const response = await sportsDBClient.get(endpoint);
+    const teams = response.data.teams || [];
+
+    const transformed = teams
+      .filter(team => team.strSport?.toLowerCase() === 'basketball')
+      .map(team => ({
+        team: {
+          id: team.idTeam,
+          name: team.strTeam || 'Unknown Team',
+          logo: team.strTeamBadge || '',
+        },
+      }));
+
     return {
       success: true,
-      data: response.data.response || [],
+      data: transformed,
     };
   } catch (error) {
     return handleError(error, 'getBasketballTeams');
@@ -332,139 +632,65 @@ const getBasketballTeams = async (leagueId = null, season = null) => {
 // Get basketball standings
 const getBasketballStandings = async (leagueId, season = null) => {
   try {
-    if (!API_KEY) {
-      throw new Error('API-Football key not configured');
-    }
-
     if (!leagueId) {
       throw new Error('League ID is required');
     }
 
-    const params = new URLSearchParams();
-    params.append('league', leagueId);
-    
-    if (season) {
-      params.append('season', season);
-    } else {
-      const currentYear = new Date().getFullYear();
-      params.append('season', currentYear);
-    }
-
-    const response = await basketballClient.get(`/standings?${params.toString()}`);
+    // TheSportsDB doesn't have basketball standings in free tier
+    // Return empty or use alternative
     return {
       success: true,
-      data: response.data.response || [],
+      data: [],
     };
   } catch (error) {
     return handleError(error, 'getBasketballStandings');
   }
 };
 
-// Get football players (by team, league, or search)
-const getFootballPlayers = async (teamId = null, leagueId = null, season = null, search = null) => {
-  try {
-    if (!API_KEY) {
-      throw new Error('API-Football key not configured');
-    }
-
-    const params = new URLSearchParams();
-    
-    if (teamId) {
-      params.append('team', teamId);
-    }
-    
-    if (leagueId) {
-      params.append('league', leagueId);
-    }
-    
-    if (season) {
-      params.append('season', season);
-    } else if (leagueId) {
-      const currentYear = new Date().getFullYear();
-      params.append('season', currentYear);
-    }
-    
-    if (search) {
-      params.append('search', search);
-    }
-
-    const response = await footballClient.get(`/players?${params.toString()}`);
-    return {
-      success: true,
-      data: response.data.response || [],
-    };
-  } catch (error) {
-    return handleError(error, 'getFootballPlayers');
-  }
-};
-
-// Get football player statistics
-const getFootballPlayerStats = async (playerId, season = null, leagueId = null) => {
-  try {
-    if (!API_KEY) {
-      throw new Error('API-Football key not configured');
-    }
-
-    if (!playerId) {
-      throw new Error('Player ID is required');
-    }
-
-    const params = new URLSearchParams();
-    params.append('player', playerId);
-    
-    if (season) {
-      params.append('season', season);
-    } else {
-      const currentYear = new Date().getFullYear();
-      params.append('season', currentYear);
-    }
-    
-    if (leagueId) {
-      params.append('league', leagueId);
-    }
-
-    const response = await footballClient.get(`/players?${params.toString()}`);
-    return {
-      success: true,
-      data: response.data.response || [],
-    };
-  } catch (error) {
-    return handleError(error, 'getFootballPlayerStats');
-  }
-};
-
-// Get basketball players (by team, league, or search)
+// Get basketball players
 const getBasketballPlayers = async (teamId = null, leagueId = null, season = null, search = null) => {
   try {
-    if (!API_KEY) {
-      throw new Error('API-Football key not configured');
-    }
-
-    const params = new URLSearchParams();
-    
     if (teamId) {
-      params.append('team', teamId);
-    }
-    
-    if (leagueId) {
-      params.append('league', leagueId);
-    }
-    
-    if (season) {
-      params.append('season', season);
-    } else if (leagueId) {
-      const currentYear = new Date().getFullYear();
-      params.append('season', currentYear);
-    }
-    
-    if (search) {
-      params.append('search', search);
+      const endpoint = `/${API_KEY}/lookup_all_players.php?id=${teamId}`;
+      const response = await sportsDBClient.get(endpoint);
+      const players = response.data.player || [];
+
+      return {
+        success: true,
+        data: players.map(player => ({
+          player: {
+            id: player.idPlayer,
+            name: player.strPlayer || 'Unknown Player',
+            position: player.strPosition || '',
+            nationality: player.strNationality || '',
+            thumb: player.strThumb || '',
+          },
+        })),
+      };
     }
 
-    const response = await basketballClient.get(`/players?${params.toString()}`);
+    if (search) {
+      const endpoint = `/${API_KEY}/searchplayers.php?p=${encodeURIComponent(search)}`;
+      const response = await sportsDBClient.get(endpoint);
+      const players = response.data.player || [];
+
+      return {
+        success: true,
+        data: players.map(player => ({
+          player: {
+            id: player.idPlayer,
+            name: player.strPlayer || 'Unknown Player',
+            position: player.strPosition || '',
+            nationality: player.strNationality || '',
+            thumb: player.strThumb || '',
+          },
+        })),
+      };
+    }
+
     return {
       success: true,
-      data: response.data.response || [],
+      data: [],
     };
   } catch (error) {
     return handleError(error, 'getBasketballPlayers');
@@ -474,32 +700,34 @@ const getBasketballPlayers = async (teamId = null, leagueId = null, season = nul
 // Get basketball player statistics
 const getBasketballPlayerStats = async (playerId, season = null, leagueId = null) => {
   try {
-    if (!API_KEY) {
-      throw new Error('API-Football key not configured');
-    }
-
     if (!playerId) {
       throw new Error('Player ID is required');
     }
 
-    const params = new URLSearchParams();
-    params.append('player', playerId);
-    
-    if (season) {
-      params.append('season', season);
-    } else {
-      const currentYear = new Date().getFullYear();
-      params.append('season', currentYear);
-    }
-    
-    if (leagueId) {
-      params.append('league', leagueId);
+    const endpoint = `/${API_KEY}/lookupplayer.php?id=${playerId}`;
+    const response = await sportsDBClient.get(endpoint);
+    const player = response.data.players?.[0];
+
+    if (!player) {
+      return {
+        success: false,
+        data: null,
+        message: 'Player not found',
+      };
     }
 
-    const response = await basketballClient.get(`/players/statistics?${params.toString()}`);
     return {
       success: true,
-      data: response.data.response || [],
+      data: [{
+        player: {
+          id: player.idPlayer,
+          name: player.strPlayer || 'Unknown Player',
+          position: player.strPosition || '',
+          nationality: player.strNationality || '',
+          thumb: player.strThumb || '',
+        },
+        statistics: [],
+      }],
     };
   } catch (error) {
     return handleError(error, 'getBasketballPlayerStats');
