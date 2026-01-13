@@ -3,7 +3,7 @@ const FootballUpcomingMatch = require('../models/FootballUpcomingMatch');
 const FootballLeague = require('../models/FootballLeague');
 const FootballTeam = require('../models/FootballTeam');
 const FootballStanding = require('../models/FootballStanding');
-const { getFootballMatchDetails, getFootballFixtures } = require('../services/apiFootball');
+const { getFootballMatchDetails, getFootballFixtures, getFootballPlayers, getFootballPlayerStats } = require('../services/apiFootball');
 const SportsDBTeam = require('../models/SportsDBTeam');
 const SportsDBLeague = require('../models/SportsDBLeague');
 const cacheService = require('../services/cacheService');
@@ -466,6 +466,70 @@ const getSportsDBLeagues = async (req, res) => {
   }
 };
 
+// Get football players
+const getPlayers = async (req, res) => {
+  try {
+    const { teamId, leagueId, season, search } = req.query;
+    
+    const apiResult = await getFootballPlayers(
+      teamId ? parseInt(teamId) : null,
+      leagueId ? parseInt(leagueId) : null,
+      season ? parseInt(season) : null,
+      search || null
+    );
+
+    if (!apiResult.success) {
+      return sendError(res, apiResult.message || 'Failed to fetch players', 500);
+    }
+
+    return sendSuccess(
+      res,
+      {
+        players: apiResult.data || [],
+        count: apiResult.data?.length || 0,
+      },
+      'Football players retrieved successfully'
+    );
+  } catch (error) {
+    console.error('[FootballController] Error fetching players:', error);
+    return sendError(res, 'Failed to fetch football players', 500);
+  }
+};
+
+// Get football player statistics
+const getPlayerStats = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { season, leagueId } = req.query;
+    
+    if (!id) {
+      return sendValidationError(res, 'Player ID is required');
+    }
+
+    const apiResult = await getFootballPlayerStats(
+      parseInt(id),
+      season ? parseInt(season) : null,
+      leagueId ? parseInt(leagueId) : null
+    );
+
+    if (!apiResult.success) {
+      return sendError(res, apiResult.message || 'Failed to fetch player statistics', 500);
+    }
+
+    return sendSuccess(
+      res,
+      {
+        player: apiResult.data?.[0] || null,
+        statistics: apiResult.data || [],
+      },
+      'Football player statistics retrieved successfully'
+    );
+  } catch (error) {
+    console.error('[FootballController] Error fetching player stats:', error);
+    return sendError(res, 'Failed to fetch football player statistics', 500);
+  }
+};
+
 module.exports = {
   getLive,
   getUpcoming,
@@ -473,6 +537,8 @@ module.exports = {
   getTeams,
   getStandings,
   getMatch,
+  getPlayers,
+  getPlayerStats,
   getSportsDBTeams,
   getSportsDBLeagues,
 };

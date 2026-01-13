@@ -7,6 +7,8 @@ const {
   getTeams,
   getStandings,
   getMatch,
+  getPlayers,
+  getPlayerStats,
   getSportsDBTeams,
   getSportsDBLeagues,
 } = require('../controllers/footballController');
@@ -19,6 +21,8 @@ router.get('/leagues', apiLimiter, getLeagues);
 router.get('/teams', apiLimiter, getTeams);
 router.get('/standings', apiLimiter, getStandings);
 router.get('/match/:id', apiLimiter, getMatch);
+router.get('/players', apiLimiter, getPlayers);
+router.get('/player/:id/stats', apiLimiter, getPlayerStats);
 
 // TheSportsDB routes (static data)
 router.get('/sportsdb/teams', apiLimiter, getSportsDBTeams);

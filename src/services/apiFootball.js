@@ -360,6 +360,152 @@ const getBasketballStandings = async (leagueId, season = null) => {
   }
 };
 
+// Get football players (by team, league, or search)
+const getFootballPlayers = async (teamId = null, leagueId = null, season = null, search = null) => {
+  try {
+    if (!API_KEY) {
+      throw new Error('API-Football key not configured');
+    }
+
+    const params = new URLSearchParams();
+    
+    if (teamId) {
+      params.append('team', teamId);
+    }
+    
+    if (leagueId) {
+      params.append('league', leagueId);
+    }
+    
+    if (season) {
+      params.append('season', season);
+    } else if (leagueId) {
+      const currentYear = new Date().getFullYear();
+      params.append('season', currentYear);
+    }
+    
+    if (search) {
+      params.append('search', search);
+    }
+
+    const response = await footballClient.get(`/players?${params.toString()}`);
+    return {
+      success: true,
+      data: response.data.response || [],
+    };
+  } catch (error) {
+    return handleError(error, 'getFootballPlayers');
+  }
+};
+
+// Get football player statistics
+const getFootballPlayerStats = async (playerId, season = null, leagueId = null) => {
+  try {
+    if (!API_KEY) {
+      throw new Error('API-Football key not configured');
+    }
+
+    if (!playerId) {
+      throw new Error('Player ID is required');
+    }
+
+    const params = new URLSearchParams();
+    params.append('player', playerId);
+    
+    if (season) {
+      params.append('season', season);
+    } else {
+      const currentYear = new Date().getFullYear();
+      params.append('season', currentYear);
+    }
+    
+    if (leagueId) {
+      params.append('league', leagueId);
+    }
+
+    const response = await footballClient.get(`/players?${params.toString()}`);
+    return {
+      success: true,
+      data: response.data.response || [],
+    };
+  } catch (error) {
+    return handleError(error, 'getFootballPlayerStats');
+  }
+};
+
+// Get basketball players (by team, league, or search)
+const getBasketballPlayers = async (teamId = null, leagueId = null, season = null, search = null) => {
+  try {
+    if (!API_KEY) {
+      throw new Error('API-Football key not configured');
+    }
+
+    const params = new URLSearchParams();
+    
+    if (teamId) {
+      params.append('team', teamId);
+    }
+    
+    if (leagueId) {
+      params.append('league', leagueId);
+    }
+    
+    if (season) {
+      params.append('season', season);
+    } else if (leagueId) {
+      const currentYear = new Date().getFullYear();
+      params.append('season', currentYear);
+    }
+    
+    if (search) {
+      params.append('search', search);
+    }
+
+    const response = await basketballClient.get(`/players?${params.toString()}`);
+    return {
+      success: true,
+      data: response.data.response || [],
+    };
+  } catch (error) {
+    return handleError(error, 'getBasketballPlayers');
+  }
+};
+
+// Get basketball player statistics
+const getBasketballPlayerStats = async (playerId, season = null, leagueId = null) => {
+  try {
+    if (!API_KEY) {
+      throw new Error('API-Football key not configured');
+    }
+
+    if (!playerId) {
+      throw new Error('Player ID is required');
+    }
+
+    const params = new URLSearchParams();
+    params.append('player', playerId);
+    
+    if (season) {
+      params.append('season', season);
+    } else {
+      const currentYear = new Date().getFullYear();
+      params.append('season', currentYear);
+    }
+    
+    if (leagueId) {
+      params.append('league', leagueId);
+    }
+
+    const response = await basketballClient.get(`/players/statistics?${params.toString()}`);
+    return {
+      success: true,
+      data: response.data.response || [],
+    };
+  } catch (error) {
+    return handleError(error, 'getBasketballPlayerStats');
+  }
+};
+
 // ============================================
 // LEGACY FUNCTIONS (for backward compatibility)
 // ============================================
@@ -389,6 +535,8 @@ module.exports = {
   getFootballLeagues,
   getFootballTeams,
   getFootballStandings,
+  getFootballPlayers,
+  getFootballPlayerStats,
   
   // Basketball
   getBasketballLiveMatches,
@@ -397,6 +545,8 @@ module.exports = {
   getBasketballLeagues,
   getBasketballTeams,
   getBasketballStandings,
+  getBasketballPlayers,
+  getBasketballPlayerStats,
   
   // Legacy (for backward compatibility)
   getTodayMatches,

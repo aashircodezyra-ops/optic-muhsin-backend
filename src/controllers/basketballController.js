@@ -3,7 +3,7 @@ const BasketballUpcomingMatch = require('../models/BasketballUpcomingMatch');
 const BasketballLeague = require('../models/BasketballLeague');
 const BasketballTeam = require('../models/BasketballTeam');
 const BasketballStanding = require('../models/BasketballStanding');
-const { getBasketballMatchDetails, getBasketballFixtures } = require('../services/apiFootball');
+const { getBasketballMatchDetails, getBasketballFixtures, getBasketballPlayers, getBasketballPlayerStats } = require('../services/apiFootball');
 const SportsDBTeam = require('../models/SportsDBTeam');
 const SportsDBLeague = require('../models/SportsDBLeague');
 const cacheService = require('../services/cacheService');
@@ -484,6 +484,70 @@ const getSportsDBLeagues = async (req, res) => {
   }
 };
 
+// Get basketball players
+const getPlayers = async (req, res) => {
+  try {
+    const { teamId, leagueId, season, search } = req.query;
+    
+    const apiResult = await getBasketballPlayers(
+      teamId ? parseInt(teamId) : null,
+      leagueId ? parseInt(leagueId) : null,
+      season ? parseInt(season) : null,
+      search || null
+    );
+
+    if (!apiResult.success) {
+      return sendError(res, apiResult.message || 'Failed to fetch players', 500);
+    }
+
+    return sendSuccess(
+      res,
+      {
+        players: apiResult.data || [],
+        count: apiResult.data?.length || 0,
+      },
+      'Basketball players retrieved successfully'
+    );
+  } catch (error) {
+    console.error('[BasketballController] Error fetching players:', error);
+    return sendError(res, 'Failed to fetch basketball players', 500);
+  }
+};
+
+// Get basketball player statistics
+const getPlayerStats = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { season, leagueId } = req.query;
+    
+    if (!id) {
+      return sendValidationError(res, 'Player ID is required');
+    }
+
+    const apiResult = await getBasketballPlayerStats(
+      parseInt(id),
+      season ? parseInt(season) : null,
+      leagueId ? parseInt(leagueId) : null
+    );
+
+    if (!apiResult.success) {
+      return sendError(res, apiResult.message || 'Failed to fetch player statistics', 500);
+    }
+
+    return sendSuccess(
+      res,
+      {
+        player: apiResult.data?.[0] || null,
+        statistics: apiResult.data || [],
+      },
+      'Basketball player statistics retrieved successfully'
+    );
+  } catch (error) {
+    console.error('[BasketballController] Error fetching player stats:', error);
+    return sendError(res, 'Failed to fetch basketball player statistics', 500);
+  }
+};
+
 module.exports = {
   getLive,
   getUpcoming,
@@ -491,6 +555,8 @@ module.exports = {
   getTeams,
   getStandings,
   getMatch,
+  getPlayers,
+  getPlayerStats,
   getSportsDBTeams,
   getSportsDBLeagues,
 };
