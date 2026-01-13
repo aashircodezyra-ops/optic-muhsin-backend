@@ -4,8 +4,9 @@ const axios = require('axios');
 // Using V1 API format for simplicity
 const SPORTS_DB_BASE_URL = 'https://www.thesportsdb.com/api/v1/json';
 
-// Optional API key from environment (for higher rate limits)
-const API_KEY = process.env.THE_SPORTS_DB_KEY || '1'; // Default to '1' for free tier
+// Free API key is '123', premium key from environment
+// Documentation: https://www.thesportsdb.com/documentation#base_url
+const API_KEY = process.env.THE_SPORTS_DB_KEY || '123'; // Default to '123' for free tier
 
 // Create axios instance
 const sportsDBClient = axios.create({
